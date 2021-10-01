@@ -1,33 +1,27 @@
-# Get the fav base image of your choice
+FROM amd64/python:3.9.7-slim-buster
 
-FROM ubuntu:16.04
+# Version: 9.2.3
+ARG MQ_VERSION=923
+ARG MQ_TEMP_DIR_PATH=/tmp/mq
+ARG MQ_PACKAGES_PATH=$MQ_TEMP_DIR_PATH/MQServer
 
-# The URL to download the MQ installer from in tar.gz format
-# ARG MQ_URL=https://public.dhe.ibm.com/ibmdl/export/pub/software/websphere/messaging/mqadv/mqadv_dev904_ubuntu_x86-64.tar.gz
-# Package from above MQ_URL was downloaded and unzipped to folder MQServer
-# Yes, better is to ADD a tar.gz file to reduce the amount of bytes sent to docker deamon and time required to to ADD or . COPY the files
-# Docker image.
+RUN apt-get update \
+    && apt-get install wget -y \
+    && apt-get clean
 
-ADD MQServer/ /tmp/mq/
+WORKDIR $MQ_TEMP_DIR_PATH
+RUN wget https://public.dhe.ibm.com/ibmdl/export/pub/software/websphere/messaging/mqadv/mqadv_dev${MQ_VERSION}_ubuntu_x86-64.tar.gz \
+    && tar -xf mqadv_dev${MQ_VERSION}_ubuntu_x86-64.tar.gz \
+    # needed to change flag to correctly identify system architecture
+    && sed -i 's/UNAME_FLAG=-i/UNAME_FLAG=-m/g' $MQ_PACKAGES_PATH/mqlicense.sh
 
-RUN apt-get update -y \
-&& apt-get install -y --no-install-recommends \
-bash \
-tar \
-util-linux \
-curl \
-gcc \
-rpm
+WORKDIR $MQ_PACKAGES_PATH
+# license acceptance is required to install packages
+RUN ./mqlicense.sh -text_only -accept \
+    && dpkg -i ibmmq-runtime_9.2.3.0_amd64.deb \
+    && dpkg -i ibmmq-gskit_9.2.3.0_amd64.deb \
+    && dpkg -i ibmmq-client_9.2.3.0_amd64.deb \
+    && dpkg -i ibmmq-sdk_9.2.3.0_amd64.deb
 
-RUN  cd tmp/mq \
-  && ls \
-  && ./mqlicense.sh -text_only -accept \
-  # You can add more components from MQ like - MQ Server, I am going for the one's I needed for my python project to run
-  && rpm -ivh --force-debian MQSeriesRuntime-*.rpm MQSeriesClient-*.rpm MQSeriesSDK-*.rpm
-
-RUN apt-get install -y software-properties-common \
-  && apt-get update \
-  && apt-get install -y python3 python3-dev \
-  && curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py \
-  && python3 get-pip.py \
-  && pip install py3mqi
+WORKDIR /
+RUN rm -rf $MQ_TEMP_DIR_PATH
